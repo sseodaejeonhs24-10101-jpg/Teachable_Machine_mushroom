@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>자연 AI 버섯 감별사 - 독버섯 & 식용버섯 스캐너</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- TensorFlow.js & Teachable Machine Image Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+    <!-- Google Fonts (Noto Sans KR & Gowun Batang) -->
+    <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@700&family=Noto+Sans+KR:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Noto Sans KR', 'sans-serif'],
+                        serif: ['Gowun Batang', 'serif'],
+                    },
+                    colors: {
+                        forest: {
+                            950: '#07100b',
+                            900: '#0e1c14',
+                            850: '#13261b',
+                            800: '#1a3325',
+                            700: '#274e38',
+                            600: '#386f51',
+                            500: '#4d946d',
+                            400: '#6eb891'
+                        },
+                        accent: {
+                            danger: '#f43f5e',
+                            safe: '#10b981',
+                            warn: '#f59e0b'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Mobile Native App Styling */
+        :root {
+            --app-max-width: 480px;
+        }
+
+        body {
+            background-color: #050b07;
+            color: #f1f5f9;
+            font-family: 'Noto Sans KR', sans-serif;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+        }
+
+        /* App Shell Frame for Mobile & Desktop viewports */
+        .app-container {
+            width: 100%;
+            max-width: var(--app-max-width);
+            min-height: 100vh;
+            background: linear-gradient(180deg, #09150e 0%, #050b07 100%);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
+            border-left: 1px solid rgba(255, 255, 255, 0.05);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 80px; /* Safe space for bottom nav */
+        }
+
+        /* Glassmorphism Cards */
+        .glass-card {
+            background: rgba(19, 38, 27, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(110, 184, 145, 0.15);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .glass-card-danger {
+            background: rgba(45, 12, 18, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(244, 63, 94, 0.35);
+            animation: pulse-danger-border 2s infinite;
+        }
+
+        @keyframes pulse-danger-border {
+            0%, 100% { border-color: rgba(244, 63, 94, 0.4); box-shadow: 0 0 15px rgba(244, 63, 94, 0.2); }
+            50% { border-color: rgba(244, 63, 94, 0.8); box-shadow: 0 0 25px rgba(244, 63, 94, 0.5); }
+        }
+
+        .glass-card-safe {
+            background: rgba(10, 40, 26, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+        }
+
+        /* Viewfinder frame styling */
+        .viewfinder-hud {
+            position: absolute;
+            inset: 16px;
+            pointer-events: none;
+            border: 1px solid rgba(110, 184, 145, 0.25);
+            border-radius: 20px;
+        }
+
+        .viewfinder-corner {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border-color: #4d946d;
+        }
+
+        /* Scrollbar styles */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(77, 148, 109, 0.3);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- App Main Container -->
+    <div class="app-container">
+
+        <!-- App Top Header -->
+        <header class="sticky top-0 z-40 bg-forest-950/80 backdrop-blur-md border-b border-forest-800/50 px-4 py-3.5 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-forest-700 flex items-center justify-center text-lg shadow-md border border-emerald-400/30">
+                    🍄
+                </div>
+                <div>
+                    <h1 class="text-base font-bold font-serif text-emerald-100 tracking-tight flex items-center gap-1.5">
+                        자연 버섯 스캐너
+                        <span class="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-500/30">AI Pro</span>
+                    </h1>
+                    <p class="text-[11px] text-emerald-400/70">독버섯 · 식용버섯 자동 스캔 및 감별</p>
+                </div>
+            </div>
+
+            <!-- Model Status Indicator -->
+            <div id="modelStatus" class="px-2.5 py-1 rounded-full bg-forest-900 border border-forest-700 text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                <span id="modelStatusText">모델 로딩 중</span>
+            </div>
+        </header>
+
+        <!-- Critical Safety Warning Banner -->
+        <div class="mx-4 mt-3 p-3 rounded-2xl bg-rose-950/50 border border-rose-500/30 text-rose-200 flex items-center gap-2.5 shadow-sm backdrop-blur-sm">
+            <i class="fa-solid fa-triangle-exclamation text-rose-400 text-base shrink-0"></i>
+            <p class="text-[11px] leading-snug">
+                <strong class="font-bold text-rose-300">⚠️ 필수 경고:</strong> AI 판별은 참고용입니다. 야생 버섯은 전문가 검증 없이 절대 섭취하지 마세요!
+            </p>
+        </div>
+
+        <!-- Main Tab Contents -->
+        <main class="px-4 py-4 space-y-4 flex-1 overflow-y-auto">
+
+            <!-- TAB 1: SCANNER PAGE -->
+            <section id="tab-scanner" class="space-y-4">
+
+                <!-- Mode Switcher & Controls -->
+                <div class="flex items-center justify-between bg-forest-900/80 p-1 rounded-2xl border border-forest-800">
+                    <button id="btnModeWebcam" onclick="switchMode('webcam')" class="flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow">
+                        <i class="fa-solid fa-camera"></i> 실시간 스캐너
+                    </button>
+                    <button id="btnModeImage" onclick="switchMode('image')" class="flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-emerald-300 hover:text-white">
+                        <i class="fa-solid fa-images"></i> 사진 업로드
+                    </button>
+                </div>
+
+                <!-- Camera Viewport Box -->
+                <div class="relative w-full aspect-[4/3] bg-black rounded-3xl overflow-hidden border border-forest-700/60 shadow-2xl flex items-center justify-center">
+                    
+                    <!-- Live Camera Container -->
+                    <div id="webcamContainer" class="w-full h-full flex items-center justify-center relative">
+                        <div id="cameraPlaceholder" class="text-center p-6 text-emerald-400/60 space-y-2">
+                            <i class="fa-solid fa-circle-notch fa-spin text-3xl text-emerald-500"></i>
+                            <p class="text-xs font-medium text-emerald-200">카메라 시작하는 중...</p>
+                        </div>
+                    </div>
+
+                    <!-- Uploaded Image Preview Container -->
+                    <div id="imagePreviewContainer" class="hidden w-full h-full flex items-center justify-center bg-forest-950">
+                        <img id="imagePreview" src="" alt="버섯 분석 이미지" class="max-w-full max-h-full object-contain">
+                    </div>
+
+                    <!-- Viewfinder HUD Overlays -->
+                    <div class="viewfinder-hud">
+                        <div class="viewfinder-corner top-0 left-0 border-t-2 border-l-2 rounded-tl-lg"></div>
+                        <div class="viewfinder-corner top-0 right-0 border-t-2 border-r-2 rounded-tr-lg"></div>
+                        <div class="viewfinder-corner bottom-0 left-0 border-b-2 border-l-2 rounded-bl-lg"></div>
+                        <div class="viewfinder-corner bottom-0 right-0 border-b-2 border-r-2 rounded-br-lg"></div>
+                    </div>
+
+                    <!-- Live Top Badge Overlay -->
+                    <div id="topResultPill" class="absolute top-3 left-3 hidden">
+                        <span id="topResultText" class="px-3 py-1 rounded-full text-xs font-black shadow-lg backdrop-blur-md flex items-center gap-1.5 border">
+                        </span>
+                    </div>
+
+                    <!-- Floating Action Buttons (Switch Camera) -->
+                    <div id="webcamControls" class="absolute bottom-3 right-3 flex gap-2">
+                        <button onclick="switchCameraFacing()" class="w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md border border-white/20 flex items-center justify-center text-xs shadow-lg transition active:scale-95" title="전면/후면 카메라 전환">
+                            <i class="fa-solid fa-camera-rotate"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Upload Action Box (Visible only in Image Mode) -->
+                <div id="uploadActionBox" class="hidden space-y-2.5">
+                    <div onclick="document.getElementById('fileInput').click()" class="border-2 border-dashed border-forest-600/70 hover:border-emerald-400 bg-forest-900/40 hover:bg-forest-900/70 rounded-2xl p-4 text-center cursor-pointer transition active:scale-[0.99]">
+                        <i class="fa-solid fa-cloud-arrow-up text-2xl text-emerald-400 mb-1"></i>
+                        <p class="text-xs font-bold text-emerald-100">갤러리 사진 선택 또는 새로 촬영하기</p>
+                        <p class="text-[10px] text-emerald-400/60 mt-0.5">JPG, PNG, WEBP 파일 지원</p>
+                        <input type="file" id="fileInput" accept="image/*" capture="environment" class="hidden" onchange="handleFileUpload(event)">
+                    </div>
+
+                    <!-- Quick Sample Test Chips -->
+                    <div class="flex items-center justify-between text-xs px-1">
+                        <span class="text-[11px] text-emerald-400/70 font-medium">샘플 버섯 빠른 테스트:</span>
+                        <div class="flex gap-1.5">
+                            <button onclick="loadSample('poison')" class="px-2.5 py-1 bg-rose-950/60 border border-rose-500/40 text-rose-300 rounded-lg text-[11px] font-medium active:scale-95">
+                                🍄 광대버섯(독)
+                            </button>
+                            <button onclick="loadSample('edible')" class="px-2.5 py-1 bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 rounded-lg text-[11px] font-medium active:scale-95">
+                                🤎 표고버섯(식용)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analysis Report Result Card -->
+                <div id="verdictCard" class="glass-card rounded-3xl p-5 space-y-4 transition-all duration-300">
+                    <div class="flex items-center justify-between border-b border-forest-800/80 pb-2.5">
+                        <span class="text-xs font-bold text-emerald-300/80 flex items-center gap-1.5">
+                            <i class="fa-solid fa-microscope text-emerald-400"></i> AI 감별 결과 리포트
+                        </span>
+                        <span id="scanTime" class="text-[10px] font-mono text-emerald-400/60">대기 중</span>
+                    </div>
+
+                    <div class="flex items-center gap-3.5">
+                        <div id="verdictIcon" class="w-14 h-14 rounded-2xl bg-forest-900 border border-forest-700 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                            🌲
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 id="verdictTitle" class="text-lg font-black font-serif text-emerald-100 truncate">
+                                화면을 카메라에 맞추세요
+                            </h2>
+                            <p id="verdictDesc" class="text-xs text-emerald-300/70 mt-0.5 leading-relaxed">
+                                카메라인식 또는 사진을 올려 버섯의 식용/독성 여부를 확인하세요.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Confidence Meter -->
+                    <div class="pt-2 border-t border-forest-800/60 flex items-center justify-between">
+                        <span class="text-xs text-emerald-300/70 font-medium">최고 일치 신뢰도</span>
+                        <span id="verdictConfidence" class="text-xl font-black font-mono text-emerald-400">0.0%</span>
+                    </div>
+                </div>
+
+                <!-- Class Breakdown Probability Card -->
+                <div class="glass-card rounded-3xl p-4 space-y-3">
+                    <h3 class="text-xs font-bold text-emerald-200/90 flex items-center gap-1.5">
+                        <i class="fa-solid fa-chart-simple text-emerald-400"></i> 세부 분류 확률
+                    </h3>
+
+                    <div id="predictionList" class="space-y-2">
+                        <div class="text-center py-4 text-xs text-emerald-400/50">
+                            스캔이 시작되면 여기에 세부 확률이 표시됩니다.
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- TAB 2: GEMINI AI ASSISTANT -->
+            <section id="tab-ai" class="hidden space-y-4">
+                <div class="glass-card rounded-3xl p-5 space-y-3.5">
+                    <div class="flex items-center justify-between border-b border-forest-800 pb-3">
+                        <h2 class="text-sm font-bold font-serif text-emerald-100 flex items-center gap-2">
+                            <i class="fa-solid fa-sparkles text-amber-300"></i> Gemini AI 버섯 지식 도우미
+                        </h2>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30 font-mono">
+                            gemini-3-flash
+                        </span>
+                    </div>
+
+                    <p class="text-xs text-emerald-200/80 leading-relaxed">
+                        궁금한 야생 버섯의 특징, 독성 중독 증상, 식용 버섯과의 구별법을 AI에게 자유롭게 질문하세요.
+                    </p>
+
+                    <!-- Chat Query Box -->
+                    <div class="space-y-2">
+                        <textarea id="aiPromptInput" rows="3" 
+                            placeholder="예: 개나리광대버섯의 독성 증상과 식용버섯으로 오인하기 쉬운 특징을 알려주세요." 
+                            class="w-full bg-forest-950 border border-forest-700 rounded-2xl p-3 text-xs text-emerald-100 placeholder-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"></textarea>
+                        
+                        <button onclick="askGemini()" id="btnAskGemini" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition shadow-lg flex items-center justify-center gap-1.5 active:scale-[0.98]">
+                            <i class="fa-solid fa-paper-plane"></i> 질문하기
+                        </button>
+                    </div>
+
+                    <!-- Response Output Container -->
+                    <div id="aiResponseContainer" class="hidden p-4 rounded-2xl bg-forest-950/80 border border-forest-700 text-xs text-emerald-100 leading-relaxed space-y-2">
+                        <div class="font-bold text-amber-300 flex items-center gap-1.5 border-b border-forest-800 pb-2">
+                            <i class="fa-solid fa-leaf"></i> AI 답변
+                        </div>
+                        <div id="aiResponseText" class="whitespace-pre-line text-emerald-200/90 leading-normal">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: SAFETY & EMERGENCY GUIDE -->
+            <section id="tab-guide" class="hidden space-y-4">
+                <div class="glass-card rounded-3xl p-5 space-y-4">
+                    <h2 class="text-sm font-bold font-serif text-emerald-100 flex items-center gap-2 border-b border-forest-800 pb-2.5">
+                        <i class="fa-solid fa-shield-halved text-emerald-400"></i> 야생 버섯 안전 수칙
+                    </h2>
+
+                    <div class="space-y-3 text-xs text-emerald-200/90">
+                        <div class="p-3 rounded-2xl bg-forest-900/60 border border-forest-800 flex items-start gap-2.5">
+                            <span class="text-amber-400 text-base font-black">1</span>
+                            <div>
+                                <strong class="text-emerald-100 block font-bold mb-0.5">민간 속설을 과신하지 마세요</strong>
+                                "색이 화려하지 않으면 식용이다", "벌레가 먹은 것은 괜찮다", "세로로 잘 찢어지면 식용이다" 등은 **모두 위험한 잘못된 속설**입니다.
+                            </div>
+                        </div>
+
+                        <div class="p-3 rounded-2xl bg-forest-900/60 border border-forest-800 flex items-start gap-2.5">
+                            <span class="text-amber-400 text-base font-black">2</span>
+                            <div>
+                                <strong class="text-emerald-100 block font-bold mb-0.5">유사종 오인 주의</strong>
+                                식용 버섯(예: 느타리, 표고, 흰주름버섯)과 치명적인 독버섯(예: 화경버섯, 독우산광대버섯)은 전문가도 구분하기 어려울 만큼 똑같이 생겼습니다.
+                            </div>
+                        </div>
+
+                        <div class="p-3 rounded-2xl bg-rose-950/40 border border-rose-500/30 text-rose-200 flex items-start gap-2.5">
+                            <i class="fa-solid fa-phone-volume text-rose-400 text-lg shrink-0 mt-0.5"></i>
+                            <div>
+                                <strong class="text-rose-300 block font-bold mb-0.5">중독 발생 시 응급 조치</strong>
+                                섭취 후 구토, 설사, 복통 발생 시 **즉시 119** 또는 **응급의료정보센터(1339)**에 신고하고, 병원 방문 시 **남은 버섯을 지참**하세요.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Mobile Bottom Navigation Bar -->
+        <nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-forest-950/90 backdrop-blur-xl border-t border-forest-800/80 px-4 py-2 z-50 flex justify-around items-center">
+            <button onclick="switchTab('scanner')" id="nav-scanner" class="flex flex-col items-center gap-1 text-emerald-400 font-bold transition text-[11px]">
+                <i class="fa-solid fa-expand text-lg"></i>
+                <span>스캐너</span>
+            </button>
+            <button onclick="switchTab('ai')" id="nav-ai" class="flex flex-col items-center gap-1 text-emerald-400/50 hover:text-emerald-300 font-medium transition text-[11px]">
+                <i class="fa-solid fa-comment-dots text-lg"></i>
+                <span>AI 도우미</span>
+            </button>
+            <button onclick="switchTab('guide')" id="nav-guide" class="flex flex-col items-center gap-1 text-emerald-400/50 hover:text-emerald-300 font-medium transition text-[11px]">
+                <i class="fa-solid fa-book-medical text-lg"></i>
+                <span>안전 가이드</span>
+            </button>
+        </nav>
+
+    </div>
+
+    <script>
+        // Target Teachable Machine Model URL
+        const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/yYkBV_WZR/";
+
+        let model = null;
+        let webcam = null;
+        let maxPredictions = 0;
+        let isWebcamActive = false;
+        let currentMode = 'webcam'; // 'webcam' or 'image'
+        let facingMode = 'environment'; // Default rear camera for mobile phones scanning mushrooms
+        let animFrameId = null;
+
+        window.onload = async function() {
+            await loadTeachableModel();
+        };
+
+        // Load Teachable Machine Model automatically on boot
+        async function loadTeachableModel() {
+            const statusText = document.getElementById('modelStatusText');
+            const statusBadge = document.getElementById('modelStatus');
+
+            try {
+                const modelURL = TM_MODEL_URL + "model.json";
+                const metadataURL = TM_MODEL_URL + "metadata.json";
+
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+
+                statusText.innerText = "준비 완료";
+                statusBadge.className = "px-2.5 py-1 rounded-full bg-emerald-950 border border-emerald-500/40 text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5 shadow";
+                statusBadge.querySelector('span').className = "w-2 h-2 rounded-full bg-emerald-400";
+
+                setupProbabilityBars();
+
+                if (currentMode === 'webcam') {
+                    await startCamera();
+                }
+            } catch (err) {
+                console.error("TM Model Load Error:", err);
+                statusText.innerText = "모델 로드 실패";
+                statusBadge.className = "px-2.5 py-1 rounded-full bg-rose-950 border border-rose-500/40 text-[11px] font-semibold text-rose-300 flex items-center gap-1.5";
+                statusBadge.querySelector('span').className = "w-2 h-2 rounded-full bg-rose-500";
+            }
+        }
+
+        function setupProbabilityBars() {
+            const container = document.getElementById('predictionList');
+            container.innerHTML = '';
+
+            if (!model) return;
+
+            const labels = model.getClassLabels();
+            labels.forEach((label, idx) => {
+                const isPoison = label.includes('독') || label.toLowerCase().includes('poison');
+                const isEdible = label.includes('식용') || label.toLowerCase().includes('edible');
+
+                const barGradient = isPoison ? 'from-rose-600 to-red-500' : (isEdible ? 'from-emerald-600 to-teal-500' : 'from-amber-600 to-yellow-500');
+
+                const item = document.createElement('div');
+                item.className = "bg-forest-950/70 p-2.5 rounded-xl border border-forest-800 space-y-1";
+                item.innerHTML = `
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="font-bold text-emerald-100 flex items-center gap-1.5">
+                            ${isPoison ? '🚨' : (isEdible ? '🌿' : '🍄')} ${label}
+                        </span>
+                        <span id="scoreText-${idx}" class="font-mono font-bold text-emerald-300">0.0%</span>
+                    </div>
+                    <div class="w-full bg-forest-900 h-2 rounded-full overflow-hidden">
+                        <div id="scoreBar-${idx}" class="bg-gradient-to-r ${barGradient} h-full rounded-full transition-all duration-150 w-0"></div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        // Switch between Scanner Mode (Camera / Image Upload)
+        async function switchMode(mode) {
+            currentMode = mode;
+            const btnCam = document.getElementById('btnModeWebcam');
+            const btnImg = document.getElementById('btnModeImage');
+            const webcamContainer = document.getElementById('webcamContainer');
+            const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+            const webcamControls = document.getElementById('webcamControls');
+            const uploadActionBox = document.getElementById('uploadActionBox');
+
+            if (mode === 'webcam') {
+                btnCam.className = "flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow";
+                btnImg.className = "flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-emerald-300 hover:text-white";
+                
+                webcamContainer.classList.remove('hidden');
+                webcamControls.classList.remove('hidden');
+                imagePreviewContainer.classList.add('hidden');
+                uploadActionBox.classList.add('hidden');
+
+                if (model && !isWebcamActive) {
+                    await startCamera();
+                }
+            } else {
+                btnImg.className = "flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow";
+                btnCam.className = "flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-emerald-300 hover:text-white";
+
+                imagePreviewContainer.classList.remove('hidden');
+                uploadActionBox.classList.remove('hidden');
+                webcamContainer.classList.add('hidden');
+                webcamControls.classList.add('hidden');
+
+                stopCamera();
+            }
+        }
+
+        // Start Mobile Camera
+        async function startCamera() {
+            const container = document.getElementById('webcamContainer');
+
+            try {
+                const flip = facingMode === 'user';
+                webcam = new tmImage.Webcam(400, 300, flip);
+                
+                await webcam.setup({ facingMode: facingMode });
+                await webcam.play();
+
+                container.innerHTML = '';
+                container.appendChild(webcam.canvas);
+                webcam.canvas.className = "w-full h-full object-cover";
+
+                isWebcamActive = true;
+                animFrameId = window.requestAnimationFrame(cameraLoop);
+            } catch (e) {
+                console.error("Camera Access Error:", e);
+                container.innerHTML = `
+                    <div class="text-center p-6 text-rose-300 space-y-2">
+                        <i class="fa-solid fa-video-slash text-2xl"></i>
+                        <p class="text-xs">카메라 권한을 허용해주세요.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function stopCamera() {
+            if (webcam) {
+                webcam.stop();
+            }
+            isWebcamActive = false;
+            if (animFrameId) cancelAnimationFrame(animFrameId);
+        }
+
+        function switchCameraFacing() {
+            facingMode = (facingMode === 'environment') ? 'user' : 'environment';
+            if (isWebcamActive) {
+                stopCamera();
+                startCamera();
+            }
+        }
+
+        async function cameraLoop() {
+            if (!isWebcamActive) return;
+
+            webcam.update();
+            await analyzeFrame(webcam.canvas);
+
+            animFrameId = window.requestAnimationFrame(cameraLoop);
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = document.getElementById('imagePreview');
+                img.onload = async function() {
+                    await analyzeFrame(img);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function loadSample(type) {
+            switchMode('image');
+            const img = document.getElementById('imagePreview');
+
+            let canvas = document.createElement('canvas');
+            canvas.width = 400;
+            canvas.height = 300;
+            let ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = "#07100b";
+            ctx.fillRect(0, 0, 400, 300);
+
+            if (type === 'poison') {
+                // Red Fly Agaric Mushroom Visual
+                ctx.fillStyle = "#e11d48";
+                ctx.beginPath();
+                ctx.arc(200, 140, 70, Math.PI, 0, false);
+                ctx.fill();
+
+                ctx.fillStyle = "#f8fafc";
+                ctx.fillRect(182, 140, 36, 80);
+
+                ctx.beginPath(); ctx.arc(170, 105, 9, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(220, 100, 11, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(195, 125, 7, 0, Math.PI*2); ctx.fill();
+            } else {
+                // Brown Shiitake Mushroom Visual
+                ctx.fillStyle = "#854d0e";
+                ctx.beginPath();
+                ctx.ellipse(200, 145, 80, 40, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = "#fef3c7";
+                ctx.fillRect(186, 150, 28, 70);
+            }
+
+            img.onload = async function() {
+                await analyzeFrame(img);
+            };
+            img.src = canvas.toDataURL();
+        }
+
+        // Run Teachable Machine Prediction on Frame
+        async function analyzeFrame(element) {
+            if (!model) return;
+
+            const predictions = await model.predict(element);
+            if (!predictions || predictions.length === 0) return;
+
+            const sorted = [...predictions].sort((a, b) => b.probability - a.probability);
+            const top = sorted[0];
+
+            renderVerdict(top);
+            renderBars(predictions);
+
+            document.getElementById('scanTime').innerText = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function renderVerdict(top) {
+            const className = top.className;
+            const confidence = (top.probability * 100).toFixed(1);
+
+            const card = document.getElementById('verdictCard');
+            const icon = document.getElementById('verdictIcon');
+            const title = document.getElementById('verdictTitle');
+            const desc = document.getElementById('verdictDesc');
+            const confidenceEl = document.getElementById('verdictConfidence');
+
+            const topPill = document.getElementById('topResultPill');
+            const topText = document.getElementById('topResultText');
+
+            const isPoison = className.includes('독') || className.toLowerCase().includes('poison');
+            const isEdible = className.includes('식용') || className.toLowerCase().includes('edible');
+
+            confidenceEl.innerText = `${confidence}%`;
+
+            if (isPoison) {
+                card.className = "glass-card-danger rounded-3xl p-5 space-y-4 transition-all duration-300";
+                icon.className = "w-14 h-14 rounded-2xl bg-rose-600 text-white flex items-center justify-center text-2xl shrink-0 shadow-lg";
+                icon.innerText = "🚨";
+                title.innerText = `위험! ${className}`;
+                title.className = "text-lg font-black font-serif text-rose-300 truncate";
+                desc.innerText = "독버섯 가능성이 높습니다. 절대로 섭취하지 마세요!";
+                confidenceEl.className = "text-xl font-black font-mono text-rose-400";
+
+                topPill.classList.remove('hidden');
+                topText.className = "px-3 py-1 rounded-full text-xs font-black bg-rose-600 text-white shadow-lg border border-rose-400 flex items-center gap-1";
+                topText.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> 독버섯 감지 (${confidence}%)`;
+            } else if (isEdible) {
+                card.className = "glass-card-safe rounded-3xl p-5 space-y-4 transition-all duration-300";
+                icon.className = "w-14 h-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl shrink-0 shadow-lg";
+                icon.innerText = "🌿";
+                title.innerText = `식용 가능성: ${className}`;
+                title.className = "text-lg font-black font-serif text-emerald-300 truncate";
+                desc.innerText = "식용 버섯의 분류와 일치합니다. (야생버섯은 항상 주의)";
+                confidenceEl.className = "text-xl font-black font-mono text-emerald-300";
+
+                topPill.classList.remove('hidden');
+                topText.className = "px-3 py-1 rounded-full text-xs font-black bg-emerald-600 text-white shadow-lg border border-emerald-400 flex items-center gap-1";
+                topText.innerHTML = `<i class="fa-solid fa-circle-check"></i> 식용 감지 (${confidence}%)`;
+            } else {
+                card.className = "glass-card rounded-3xl p-5 space-y-4 transition-all duration-300";
+                icon.className = "w-14 h-14 rounded-2xl bg-forest-900 border border-forest-700 flex items-center justify-center text-2xl shrink-0";
+                icon.innerText = "🍄";
+                title.innerText = `${className}`;
+                title.className = "text-lg font-black font-serif text-emerald-100 truncate";
+                desc.innerText = "버섯 형태가 잘 보이도록 스캔해주세요.";
+                confidenceEl.className = "text-xl font-black font-mono text-emerald-200/80";
+
+                topPill.classList.add('hidden');
+            }
+        }
+
+        function renderBars(predictions) {
+            predictions.forEach((pred) => {
+                const labels = model.getClassLabels();
+                const idx = labels.indexOf(pred.className);
+                if (idx !== -1) {
+                    const scoreEl = document.getElementById(`scoreText-${idx}`);
+                    const barEl = document.getElementById(`scoreBar-${idx}`);
+                    if (scoreEl && barEl) {
+                        const pct = (pred.probability * 100).toFixed(1);
+                        scoreEl.innerText = `${pct}%`;
+                        barEl.style.width = `${pct}%`;
+                    }
+                }
+            });
+        }
+
+        // Bottom Navigation Tab Switching
+        function switchTab(tab) {
+            const tabs = ['scanner', 'ai', 'guide'];
+            tabs.forEach(t => {
+                const page = document.getElementById(`tab-${t}`);
+                const navBtn = document.getElementById(`nav-${t}`);
+                if (t === tab) {
+                    page.classList.remove('hidden');
+                    navBtn.className = "flex flex-col items-center gap-1 text-emerald-400 font-bold transition text-[11px]";
+                } else {
+                    page.classList.add('hidden');
+                    navBtn.className = "flex flex-col items-center gap-1 text-emerald-400/50 hover:text-emerald-300 font-medium transition text-[11px]";
+                }
+            });
+        }
+
+        // Gemini AI Assistant Handler
+        async function askGemini() {
+            const input = document.getElementById('aiPromptInput');
+            const prompt = input.value.trim();
+            if (!prompt) {
+                alert("질문 내용을 입력해주세요!");
+                return;
+            }
+
+            const btn = document.getElementById('btnAskGemini');
+            const container = document.getElementById('aiResponseContainer');
+            const textEl = document.getElementById('aiResponseText');
+
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> AI 답변 생성 중...`;
+            container.classList.remove('hidden');
+            textEl.innerText = "Gemini AI가 버섯 지식을 검색하고 있습니다...";
+
+            try {
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+                const systemInstruction = "당신은 임산물 및 버섯 독성학 분야의 최고 전문가입니다. 사용자의 버섯 관련 질문에 쉽고 명확하게 한국어로 답변하되, 야생 버섯 임의 섭취 위험성에 대한 주의 문구를 필수로 포함해 작성해주세요.";
+
+                const payload = {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    systemInstruction: { parts: [{ text: systemInstruction }] }
+                };
+
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (reply) {
+                    textEl.innerText = reply;
+                } else {
+                    textEl.innerText = "답변을 생성하지 못했습니다. 잠시 후 다시 시도해 보세요.";
+                }
+            } catch (e) {
+                console.error("Gemini API Error:", e);
+                textEl.innerText = "AI 서비스 연결 중 오류가 발생했습니다.";
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> 질문하기`;
+            }
+        }
+    </script>
+</body>
+</html>
